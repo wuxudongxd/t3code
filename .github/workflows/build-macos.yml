@@ -19,28 +19,27 @@ concurrency:
 jobs:
   build-macos-arm64:
     name: Build macOS Apple Silicon (.dmg)
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       # Exclude orphaned gitlinks in .repos/ and large mobile static libraries.
+      # Using git directly avoids actions/checkout's post-job credential cleanup
+      # running `git submodule foreach` against orphaned gitlinks in .repos/.
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
-          sparse-checkout-cone-mode: false
+        shell: bash
+        env:
+          CHECKOUT_REF: ${{ github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$CHECKOUT_REF"
+          git sparse-checkout set --no-cone '/*' '!/.repos/' '!/apps/mobile/modules/t3-terminal/Vendor/**/*.a'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
 
-      - name: Setup Vite+ & Node.js
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: false
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
 
       - name: Cache Rust resource monitor
         id: resource_monitor_cache
@@ -55,17 +54,14 @@ jobs:
         with:
           targets: aarch64-apple-darwin
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Check i18n translations
-        run: pnpm i18n:check
+        run: vp run i18n:check
 
       - name: Build unsigned macOS arm64 DMG
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           T3CODE_DESKTOP_SIGNED: "false"
-        run: pnpm dist:desktop:dmg:arm64
+        run: vp run dist:desktop:dmg:arm64
 
       - name: Upload macOS DMG artifact
         uses: actions/upload-artifact@v4
