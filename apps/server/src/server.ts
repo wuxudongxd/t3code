@@ -120,6 +120,7 @@ import * as ServerOwnership from "./serverOwnership.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as NetworkProxy from "./custom/networkProxy.ts";
 import * as ManagedLimits from "./policy/managedLimits.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
@@ -286,10 +287,15 @@ const layerProviderEventLoggers = Layer.effect(
 
 const layerPtyAdapter = NodePtyAdapter.layer;
 
-const layerServerSettings = ServerSettings.layer.pipe(
+const layerServerSettingsBase = ServerSettings.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
   Layer.provideMerge(ManagedPolicy.layer),
   Layer.provideMerge(SqlitePersistence.layerConfig),
+);
+
+const layerServerSettings = Layer.merge(
+  layerServerSettingsBase,
+  NetworkProxy.layer.pipe(Layer.provide(layerServerSettingsBase)),
 );
 
 const layerNativeTelemetry = NativeTelemetryClient.layer.pipe(

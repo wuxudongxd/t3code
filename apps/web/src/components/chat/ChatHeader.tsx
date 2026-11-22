@@ -44,6 +44,7 @@ import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
+import { ArtifactsWallTrigger } from "../custom/ArtifactsWallPanel";
 import { HeaderQuotaCapsule } from "../custom/HeaderQuotaCapsule";
 
 interface ChatHeaderProps {
@@ -412,6 +413,11 @@ export const ChatHeader = memo(function ChatHeader({
           ) : null}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      <ArtifactsWallTrigger
+        environmentId={activeThreadEnvironmentId}
+        threadRef={isServerThread ? activeThreadRef : null}
+        workspaceRoot={activeProjectCwd}
+      />
       <HeaderQuotaCapsule
         environmentId={activeThreadEnvironmentId}
         threadRef={isServerThread ? activeThreadRef : null}

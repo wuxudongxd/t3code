@@ -300,6 +300,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "network-proxy",
+    title: msg("Network proxy"),
+    to: "/settings/maintenance",
+    scope: "environment-defaults",
+    searchTerms: [msg("http https proxy outbound network localhost loopback 127.0.0.1")],
+  },
+  {
     id: "project-defaults",
     title: msg("Project defaults and overrides"),
     to: "/settings/threads",

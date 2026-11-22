@@ -2360,6 +2360,68 @@ export function ThreadsSettingsPanel() {
   );
 }
 
+function NetworkProxyRow() {
+  const setting = useSearchableSetting();
+  const gt = useGT();
+  const { targets } = useSettingsScope();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["networkProxyUrl"]);
+  const edited = useRef(false);
+  const scopeKey = targets.map((target) => target.environmentId).join(",");
+
+  const commit = (rawValue: string) => {
+    const value = rawValue.trim();
+    if (edited.current && (mixed || value !== settings.networkProxyUrl)) {
+      updateSettings({ networkProxyUrl: value });
+    }
+    edited.current = false;
+  };
+
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={["networkProxyUrl"]}
+      {...setting("network-proxy")}
+      description={gt(
+        "HTTP or HTTPS proxy URL for outbound server requests. Local loopback addresses (localhost, 127.0.0.1, ::1) always bypass the proxy. Leave empty to fall back to HTTPS_PROXY / HTTP_PROXY.",
+      )}
+      resetAction={
+        mixed || settings.networkProxyUrl !== "" ? (
+          <SettingResetButton
+            ariaLabel={gt("Reset network proxy to default")}
+            onClick={() => updateSettings({ networkProxyUrl: "" })}
+          />
+        ) : null
+      }
+      control={
+        <Input
+          key={`${scopeKey}:${mixed}:${settings.networkProxyUrl}`}
+          aria-label={gt("Network proxy")}
+          autoCapitalize="none"
+          spellCheck={false}
+          className="w-full sm:w-64"
+          placeholder={mixed ? gt("Mixed") : "http://127.0.0.1:7890"}
+          defaultValue={mixed ? "" : settings.networkProxyUrl}
+          onChange={() => {
+            edited.current = true;
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            } else if (event.key === "Escape") {
+              edited.current = false;
+              event.currentTarget.value = mixed ? "" : settings.networkProxyUrl;
+              event.currentTarget.blur();
+            }
+          }}
+          onBlur={(event) => commit(event.target.value)}
+        />
+      }
+    />
+  );
+}
+
 export function MaintenanceSettingsPanel() {
   const setting = useSearchableSetting();
   const gt = useGT();
@@ -2443,6 +2505,10 @@ export function MaintenanceSettingsPanel() {
             />
           }
         />
+      </SettingsSection>
+
+      <SettingsSection id="network" title={gt("Network")}>
+        <NetworkProxyRow />
       </SettingsSection>
 
       <SettingsSection id="background" title={gt("Background activity")}>
