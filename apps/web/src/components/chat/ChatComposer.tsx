@@ -298,6 +298,7 @@ import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { promptSuggestionToAccept, usePromptSuggestion } from "./usePromptSuggestion";
 import { useFreshSessionArmed } from "./freshSessionArms";
+import { ComposerTelemetryStrip } from "../custom/ComposerTelemetryStrip";
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
   const armed = Date.now() <= deadline.current;
@@ -4078,6 +4079,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 </div>
               </div>
             )}
+            {!isComposerCollapsedMobile && routeKind === "server" && activeThreadId !== null ? (
+              <ComposerTelemetryStrip threadRef={routeThreadRef} />
+            ) : null}
             {showInlineRestingControls ? (
               <div className="h-8">
                 <div

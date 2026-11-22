@@ -28,6 +28,7 @@ import {
   IRIS_THEME,
   OCEAN_THEME,
 } from "../../themePalette";
+import { PORCELAIN_THEME, STARDUST_THEME } from "@t3tools/shared/themePalettes";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -61,6 +62,8 @@ const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
   OCEAN_THEME,
   EMBER_THEME,
   IRIS_THEME,
+  STARDUST_THEME,
+  PORCELAIN_THEME,
 ];
 
 function collectionVariantLabels(themes: ReadonlyArray<ThemeDefinition>): ReadonlyArray<string> {

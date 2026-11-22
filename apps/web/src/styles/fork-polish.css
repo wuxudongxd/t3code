@@ -1,0 +1,213 @@
+/*
+ * Dedicated low-conflict visual polish layer (Apple-minimal + CJK-optimized).
+ * Imported via a single `@import "./styles/fork-polish.css";` line in `index.css`
+ * to keep upstream rebase friction minimal.
+ *
+ * All colors derive from existing semantic CSS custom properties so light mode,
+ * dark mode, and every built-in/custom theme stay cohesive.
+ */
+
+/* 1. Default CJK-optimized typography stacks (mirrored in `appearanceFonts.ts`).
+   Inline variables set by Settings -> Appearance still take precedence. */
+:root {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono:
+    "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", "PingFang SC",
+    "Noto Sans CJK SC", "Microsoft YaHei", monospace;
+}
+
+@layer base {
+  html {
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* 2. Refined visual hierarchy, subtle depth, and smooth composer focus rings */
+@layer components {
+  [data-slot="composer-host"],
+  [data-chat-composer-main-surface="true"] {
+    transition:
+      box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  [data-slot="composer-host"]:focus-within,
+  [data-chat-composer-main-surface="true"]:focus-within {
+    --chat-composer-outline: color-mix(in srgb, var(--ring) 46%, var(--contrast-border));
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--ring) 14%, transparent),
+      0 6px 20px -10px color-mix(in srgb, var(--foreground) 12%, transparent);
+  }
+
+  :is(.dark, .dark *) [data-slot="composer-host"]:focus-within,
+  :is(.dark, .dark *) [data-chat-composer-main-surface="true"]:focus-within {
+    --chat-composer-outline: color-mix(in srgb, var(--ring) 54%, var(--contrast-border));
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--ring) 20%, transparent),
+      0 14px 32px -16px rgb(0 0 0 / 72%);
+  }
+
+  /* Subtle elevation polish for floating menus, popovers, and selects */
+  :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]) {
+    box-shadow:
+      0 10px 30px -10px color-mix(in srgb, var(--foreground) 12%, transparent),
+      0 2px 6px -2px color-mix(in srgb, var(--foreground) 6%, transparent);
+  }
+
+  :is(.dark, .dark *)
+    :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]) {
+    box-shadow:
+      inset 0 1px rgb(255 255 255 / 5%),
+      0 16px 40px -12px rgb(0 0 0 / 72%);
+  }
+
+  /* 3. Cleaner sidebar hover, active, and selected states */
+  [data-app-sidebar] [data-sidebar-row] {
+    transition:
+      background-color 140ms ease,
+      color 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  [data-app-sidebar] [data-sidebar-row][data-active="true"],
+  [data-app-sidebar] [data-sidebar-row][aria-current="page"],
+  [data-app-sidebar] [data-sidebar-row][data-selected="true"] {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sidebar-foreground) 8%, transparent);
+  }
+
+  :is(.dark, .dark *) [data-app-sidebar] [data-sidebar-row][data-active="true"],
+  :is(.dark, .dark *) [data-app-sidebar] [data-sidebar-row][aria-current="page"],
+  :is(.dark, .dark *) [data-app-sidebar] [data-sidebar-row][data-selected="true"] {
+    box-shadow: inset 0 1px rgb(255 255 255 / 6%);
+  }
+
+  /* 4. Comfortable CJK reading rhythm & typography in chat messages and composer */
+  .chat-markdown {
+    line-height: 1.72;
+    letter-spacing: 0.005em;
+    font-kerning: normal;
+  }
+
+  .chat-markdown p {
+    margin-block: 0.7rem;
+  }
+
+  .chat-markdown li + li {
+    margin-top: 0.34rem;
+  }
+
+  .chat-markdown :is(h1, h2, h3, h4) {
+    letter-spacing: -0.012em;
+    line-height: 1.38;
+  }
+
+  .chat-markdown pre,
+  .chat-markdown .chat-markdown-codeblock pre {
+    line-height: 1.58;
+    letter-spacing: 0;
+  }
+
+  .chat-markdown :not(pre) > code {
+    border-color: color-mix(in srgb, var(--contrast-border) 55%, transparent);
+    border-radius: 0.3125rem;
+    padding: 0.08em 0.36em;
+    font-size: 0.86em;
+    vertical-align: baseline;
+  }
+
+  .chat-markdown blockquote {
+    border-inline-start-width: 2.5px;
+    border-inline-start-color: color-mix(in srgb, var(--primary) 42%, var(--contrast-border));
+    background: color-mix(in srgb, var(--muted) 55%, transparent);
+    border-radius: 0 0.5rem 0.5rem 0;
+    padding: 0.45rem 0.85rem;
+  }
+
+  .composer-tiptap.ProseMirror {
+    line-height: 1.62;
+  }
+
+  /* 5. Crisp button & control optical vertical alignment for CJK + custom fonts */
+  :where(button, [role="button"], [data-slot="button"]) {
+    line-height: 1.25;
+  }
+
+  :where([data-slot="button"], [data-sidebar-control]) {
+    align-items: center;
+  }
+
+  :where([data-slot="button"], [data-sidebar-control]) > svg {
+    flex-shrink: 0;
+    vertical-align: middle;
+  }
+
+  /* 6. Stage artwork pigments for curated built-in themes (Stardust & Porcelain) */
+  html[data-theme-id="stardust"] {
+    --stage-art-top: oklch(0.68 0.145 278);
+    --stage-art-mid: oklch(0.5 0.17 276);
+    --stage-art-bottom: oklch(0.32 0.125 274);
+    --stage-art-highlight: oklch(0.93 0.04 278);
+    --stage-art-secondary: oklch(0.7 0.14 286);
+    --stage-art-tertiary: oklch(0.64 0.15 256);
+    --stage-art-line: oklch(0.94 0.03 276);
+  }
+
+  html.dark[data-theme-id="stardust"] {
+    --stage-art-top: oklch(0.49 0.14 278);
+    --stage-art-mid: oklch(0.35 0.12 276);
+    --stage-art-bottom: oklch(0.21 0.075 274);
+    --stage-art-highlight: oklch(0.89 0.055 278);
+    --stage-art-secondary: oklch(0.62 0.145 284);
+    --stage-art-tertiary: oklch(0.58 0.14 254);
+    --stage-art-line: oklch(0.92 0.035 276);
+  }
+
+  html[data-theme-id="porcelain"] {
+    --stage-art-top: oklch(0.73 0.105 254);
+    --stage-art-mid: oklch(0.55 0.145 256);
+    --stage-art-bottom: oklch(0.38 0.115 258);
+    --stage-art-highlight: oklch(0.96 0.02 85);
+    --stage-art-secondary: oklch(0.76 0.095 252);
+    --stage-art-tertiary: oklch(0.72 0.045 80);
+    --stage-art-line: oklch(0.97 0.015 85);
+  }
+
+  html.dark[data-theme-id="porcelain"] {
+    --stage-art-top: oklch(0.54 0.115 256);
+    --stage-art-mid: oklch(0.4 0.105 256);
+    --stage-art-bottom: oklch(0.25 0.065 258);
+    --stage-art-highlight: oklch(0.92 0.025 85);
+    --stage-art-secondary: oklch(0.66 0.11 254);
+    --stage-art-tertiary: oklch(0.62 0.04 80);
+    --stage-art-line: oklch(0.94 0.02 85);
+  }
+}
+
+/* 7. Tasteful, unobtrusive pill scrollbars (respects theme & light/dark tokens) */
+:where(:not(iframe))::-webkit-scrollbar {
+  width: var(--app-scrollbar-width);
+  height: var(--app-scrollbar-width);
+}
+
+:where(:not(iframe))::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  background-color: var(--app-scrollbar-thumb);
+}
+
+:where(:not(iframe))::-webkit-scrollbar-thumb:hover {
+  background-color: var(--app-scrollbar-thumb-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="composer-host"],
+  [data-chat-composer-main-surface="true"],
+  [data-app-sidebar] [data-sidebar-row] {
+    transition: none;
+  }
+}
