@@ -204,10 +204,189 @@
   background-color: var(--app-scrollbar-thumb-hover);
 }
 
+/* 8. Unified Apple-minimal hairline borders, modal elevation & Settings alignment.
+   Kept unlayered so these cohesive visual refinements cleanly override Tailwind
+   utility border/padding classes without modifying upstream TSX components. */
+:root {
+  --fork-hairline-subtle: color-mix(in srgb, var(--contrast-foreground) 6%, transparent);
+  --fork-hairline: color-mix(in srgb, var(--contrast-foreground) 8.5%, transparent);
+  --fork-hairline-control: color-mix(in srgb, var(--contrast-foreground) 11%, transparent);
+  --fork-hairline-control-hover: color-mix(in srgb, var(--contrast-foreground) 17%, transparent);
+}
+
+:root.dark,
+.dark {
+  --fork-hairline-subtle: color-mix(in srgb, var(--contrast-foreground) 6.5%, transparent);
+  --fork-hairline: color-mix(in srgb, var(--contrast-foreground) 9.5%, transparent);
+  --fork-hairline-control: color-mix(in srgb, var(--contrast-foreground) 12.5%, transparent);
+  --fork-hairline-control-hover: color-mix(in srgb, var(--contrast-foreground) 19%, transparent);
+}
+
+/* Settings & App route modal: replace heavy dark outer frame & drop shadow
+   with a crisp macOS-style hairline and airy layered elevation. */
+@media (min-width: 640px) {
+  [data-app-modal] {
+    border-color: var(--fork-hairline);
+    box-shadow:
+      0 0 0 0.5px color-mix(in srgb, var(--contrast-foreground) 5%, transparent),
+      0 24px 60px -18px rgb(0 0 0 / 16%),
+      0 8px 20px -10px rgb(0 0 0 / 7%);
+  }
+
+  :is(.dark, .dark *) [data-app-modal] {
+    border-color: var(--fork-hairline);
+    box-shadow:
+      inset 0 1px rgb(255 255 255 / 6%),
+      0 28px 72px -16px rgb(0 0 0 / 78%),
+      0 8px 24px -8px rgb(0 0 0 / 48%);
+  }
+}
+
+/* Standard glass dialogs: match the softer hairline & airy light-mode shadow */
+[data-slot="dialog-popup"]:not([data-app-modal]).dialog-glass {
+  border-color: var(--fork-hairline);
+  box-shadow:
+    0 20px 50px -16px rgb(0 0 0 / 16%),
+    0 4px 14px -6px rgb(0 0 0 / 7%);
+}
+
+:is(.dark, .dark *) [data-slot="dialog-popup"]:not([data-app-modal]).dialog-glass {
+  border-color: var(--fork-hairline);
+  box-shadow:
+    inset 0 1px rgb(255 255 255 / 5%),
+    0 24px 72px -20px rgb(0 0 0 / 84%);
+}
+
+/* Settings shell internal dividers (sidebar edge & top header) */
+[data-app-modal] nav[data-workspace-area="settings-nav"] {
+  border-inline-end-color: var(--fork-hairline);
+}
+
+[data-app-modal] [data-workspace-area="settings"] > header {
+  border-bottom-color: var(--fork-hairline);
+}
+
+/* Floating menus, selects, and popovers: unified hairline edge */
+[data-slot="menu-popup"].dropdown-glass,
+[data-slot="select-popup"] > .dropdown-glass,
+[data-slot="popover-popup"].dropdown-glass {
+  border-color: var(--fork-hairline);
+}
+
+/* Unify outline buttons, scope dropdown pills, selects, and inputs:
+   softer translucent hairline instead of harsh opaque border-input. */
+:is(
+    [data-slot="button"],
+    [data-slot="select-trigger"],
+    [data-slot="input-control"]
+  ).border-input:not(:focus-visible):not(:has(:focus-visible)):not([aria-invalid="true"]):not(
+    :has([aria-invalid="true"])
+  ) {
+  border-color: var(--fork-hairline-control);
+  box-shadow: 0 1px 1.5px color-mix(in srgb, var(--contrast-foreground) 3%, transparent);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease;
+}
+
+:is(
+    [data-slot="button"],
+    [data-slot="select-trigger"],
+    [data-slot="input-control"]
+  ).border-input:not(:disabled):not([aria-disabled="true"]):not(:focus-visible):not(
+    :has(:focus-visible)
+  ):not([aria-invalid="true"]):not(:has([aria-invalid="true"])):hover {
+  border-color: var(--fork-hairline-control-hover);
+}
+
+/* Remove the heavy dark bottom-edge inner pseudo-shadow on outline controls */
+:is(
+    [data-slot="button"],
+    [data-slot="select-trigger"],
+    [data-slot="input-control"]
+  ).border-input::before {
+  box-shadow: none;
+}
+
+/* Settings grouped cards & internal row dividers */
+[data-slot="settings-group"].border {
+  border-color: var(--fork-hairline);
+  background-color: color-mix(in srgb, var(--card) 74%, var(--background));
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--contrast-foreground) 2.5%, transparent);
+}
+
+:is(.dark, .dark *) [data-slot="settings-group"].border {
+  background-color: color-mix(in srgb, var(--card) 58%, transparent);
+  box-shadow: none;
+}
+
+[data-slot="settings-group"].border > :not(:first-child) {
+  border-top-color: var(--fork-hairline-subtle);
+}
+
+/* Preserve flat nested sections inside provider detail pane */
+[data-provider-detail] [data-slot="settings-group"].border {
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* Settings page alignment & vertical rhythm:
+   Align the top scope bar ("设置应用于 ...") and section headings ("测试版")
+   cleanly with the left edge of the rounded settings cards. */
+[data-settings-page-scroll] > div {
+  gap: 1.5rem;
+  padding-top: 1.25rem;
+}
+
+[data-settings-page-scroll] > div > p {
+  padding-inline: 0.125rem;
+}
+
+[data-settings-page-scroll] > div > p [data-slot="button"] {
+  border-radius: 0.5rem;
+  background-color: var(--card);
+}
+
+:is(.dark, .dark *) [data-settings-page-scroll] > div > p [data-slot="button"] {
+  background-color: color-mix(in srgb, var(--card) 85%, transparent);
+}
+
+[data-settings-page-scroll]
+  section
+  > [data-settings-scroll-target]:not([data-slot="settings-group"]) {
+  padding-inline: 0.125rem;
+}
+
+[data-settings-page-scroll] [data-slot="settings-group"].border > [data-slot="settings-row"] {
+  padding-inline: 1rem;
+}
+
+[data-settings-page-scroll] [data-slot="settings-group"].border > [data-slot="settings-row"].py-3 {
+  padding-block: 0.8125rem;
+}
+
+/* 9. Minimal sidebar footer: keep only the leftmost Settings gear button
+   (plus transient thread-undo notice), hiding Pull Requests, Issues, Usage,
+   and Update/Refresh buttons for a clean macOS sidebar chrome. */
+[data-app-sidebar]
+  [data-slot="sidebar-footer"]
+  [data-slot="sidebar-menu"]
+  > [data-slot="sidebar-menu-item"]:not(:first-child):not(:has([data-slot="inline-button"])) {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-slot="composer-host"],
   [data-chat-composer-main-surface="true"],
-  [data-app-sidebar] [data-sidebar-row] {
+  [data-app-sidebar] [data-sidebar-row],
+  :is(
+    [data-slot="button"],
+    [data-slot="select-trigger"],
+    [data-slot="input-control"]
+  ).border-input {
     transition: none;
   }
 }
