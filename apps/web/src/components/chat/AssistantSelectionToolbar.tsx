@@ -198,6 +198,7 @@ export function AssistantSelectionToolbar({
       size="xs"
       variant="glass"
       disabled={tooLong}
+      data-assistant-selection-toolbar=""
       aria-label={tooLong ? gt("Selection is too long to cite") : gt("Cite selection in composer")}
       className="fixed z-50 max-w-[calc(100vw-1rem)]"
       style={{ left: selection.position.x, top: selection.position.y }}
@@ -211,7 +212,11 @@ export function AssistantSelectionToolbar({
         }
       }}
     >
-      <QuoteIcon aria-hidden="true" className="size-3.5" />
+      <QuoteIcon
+        aria-hidden="true"
+        className="size-[13px] shrink-0 opacity-80"
+        strokeWidth={1.85}
+      />
       {tooLong
         ? gt("Shorten selection")
         : gt("Cite", { $context: "verb, button that quotes the selected text" })}
