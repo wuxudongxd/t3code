@@ -30,6 +30,7 @@ import { resolveSettingsSecrets } from "../secrets/settingsSecretValue.ts";
 import * as Settings from "../serverSettings.ts";
 import { windowLimitsModel } from "../provider/claudeUsageLimits.ts";
 import { makeCliproxyApi } from "./cliproxyApi.ts";
+import { makeMagpieQuotaSource } from "../custom/magpieQuotaSource.ts";
 
 export class UsageLimitSources extends Context.Service<
   UsageLimitSources,
@@ -37,6 +38,7 @@ export class UsageLimitSources extends Context.Service<
     readonly current: Effect.Effect<ReadonlyArray<UsageLimitSourceSnapshot>>;
     readonly streamChanges: Stream.Stream<ReadonlyArray<UsageLimitSourceSnapshot>>;
     readonly refresh: Effect.Effect<void>;
+    readonly forceRefresh: Effect.Effect<void>;
     readonly consumeResetCredit: (
       input: UsageLimitSourceConsumeResetCreditInput,
     ) => Effect.Effect<ProviderConsumeResetCreditResult, UsageLimitSourceError>;
@@ -96,9 +98,11 @@ function missingManagementKey(config: UsageLimitSourceConfig): string {
     : "Could not read the management key from its secret provider.";
 }
 
-/** @public */
-export const make = Effect.gen(function* () {
+const makeWithOptions = Effect.fn("UsageLimitSources.make")(function* (options: {
+  readonly autoDiscoverLocalMagpie: boolean;
+}) {
   const api = yield* makeCliproxyApi;
+  const magpieSource = yield* makeMagpieQuotaSource;
   const settingsService = yield* Settings.ServerSettingsService;
   const secrets = yield* SecretResolver.SecretResolver;
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
@@ -157,20 +161,36 @@ export const make = Effect.gen(function* () {
 
   // Serialize refreshes so slow old-settings reads cannot resurrect removed sources after newer refreshes.
   const refreshLock = yield* Semaphore.make(1);
-  const refresh = Effect.gen(function* () {
-    const settings = yield* settingsService.getSettings.pipe(
-      Effect.orElseSucceed((): ServerSettings | null => null),
-    );
-    const entries = Object.entries(settings?.usageLimitSources ?? {}).filter(
-      ([, config]) => config.enabled,
-    );
-    const snapshots = yield* Effect.forEach(
-      entries,
-      ([id, config]) => readSource(id as UsageLimitSourceId, config),
-      { concurrency: 4 },
-    );
-    yield* publish(keepLastGoodReadings(yield* Ref.get(stateRef), snapshots));
-  }).pipe(refreshLock.withPermits(1), Effect.ignoreCause({ log: true }));
+  const runRefresh = Effect.fn("UsageLimitSources.refresh")(
+    function* (forceRefresh: boolean) {
+      const settings = yield* settingsService.getSettings.pipe(
+        Effect.orElseSucceed((): ServerSettings | null => null),
+      );
+      const entries = Object.entries(settings?.usageLimitSources ?? {}).filter(
+        ([, config]) => config.enabled,
+      );
+      const explicitSnapshots = yield* Effect.forEach(
+        entries,
+        ([id, config]) => readSource(id as UsageLimitSourceId, config),
+        { concurrency: 4 },
+      );
+      const discoveredSnapshots = options.autoDiscoverLocalMagpie
+        ? yield* magpieSource.discoverLocalSnapshots(
+            settings,
+            new Set(
+              explicitSnapshots.flatMap((snapshot) => (snapshot.origin ? [snapshot.origin] : [])),
+            ),
+            forceRefresh,
+          )
+        : [];
+      const snapshots = [...explicitSnapshots, ...discoveredSnapshots];
+      yield* publish(keepLastGoodReadings(yield* Ref.get(stateRef), snapshots));
+    },
+    refreshLock.withPermits(1),
+    Effect.ignoreCause({ log: true }),
+  );
+  const refresh = runRefresh(false);
+  const forceRefresh = runRefresh(true);
 
   // Shares the refresh lock so a stale in-flight read cannot overwrite a redemption.
   const consumeResetCredit = Effect.fn("UsageLimitSources.consumeResetCredit")(function* (
@@ -234,6 +254,7 @@ export const make = Effect.gen(function* () {
     current: Ref.get(stateRef),
     consumeResetCredit,
     refresh,
+    forceRefresh,
     get streamChanges() {
       return Stream.unwrap(
         Effect.gen(function* () {
@@ -248,9 +269,13 @@ export const make = Effect.gen(function* () {
   } satisfies UsageLimitSources["Service"];
 });
 
-export const layer = Layer.effect(UsageLimitSources, make).pipe(
-  Layer.provide(SecretResolverLayer.layer),
-);
+/** @public */
+export const make = makeWithOptions({ autoDiscoverLocalMagpie: false });
+
+export const layer = Layer.effect(
+  UsageLimitSources,
+  makeWithOptions({ autoDiscoverLocalMagpie: true }),
+).pipe(Layer.provide(SecretResolverLayer.layer));
 
 /** A hub returns a usage limit only when every account it routes the model to is spent. */
 export function hubPoolResetAt(

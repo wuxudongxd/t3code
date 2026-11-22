@@ -144,6 +144,7 @@ import { useThreadFindPositionReader } from "./useThreadFindPositionReader";
 import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
 import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
 import { useClientSettings } from "../../hooks/useSettings";
+import { StepCapsule } from "../custom/StepCapsule";
 
 function timelineListStateFor(identity: string): {
   readonly identity: string;
@@ -1391,6 +1392,14 @@ const ConversationTimeline = memo(function ConversationTimeline({
       composerInset={anchoredEndSpace ? 0 : contentInsetEndAdjustment}
       onGrow={onFooterGrow}
     >
+      <StepCapsule
+        timelineEntries={timelineEntries}
+        isWorking={isWorking}
+        activeTurnStartedAt={activeTurnStartedAt}
+        latestRun={latestRun}
+        runningRunId={runningRunId}
+        workspaceRoot={workspaceRoot}
+      />
       {footer}
       {unmatchedPendingApprovals.length > 0 ? (
         <TimelineRowCtx value={sharedState}>

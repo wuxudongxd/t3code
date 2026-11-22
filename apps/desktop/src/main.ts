@@ -1,5 +1,6 @@
 import * as MacPermissions from "./permissions/MacPermissions.ts";
 import { handleStdioError } from "./app/stdioErrors.ts";
+import { registerForkUpdater } from "./custom/forkUpdater.ts";
 
 for (const stream of [process.stdout, process.stderr]) {
   stream.on("error", handleStdioError);
@@ -255,5 +256,7 @@ const layerDesktopRuntime = layerDesktopClerk.pipe(
   ),
   Layer.provideMerge(DesktopPreReadyPlatform.layer),
 );
+
+registerForkUpdater();
 
 DesktopApp.program.pipe(Effect.provide(layerDesktopRuntime), NodeRuntime.runMain);
