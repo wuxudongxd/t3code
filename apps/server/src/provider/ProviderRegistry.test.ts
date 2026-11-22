@@ -2138,6 +2138,30 @@ it.layer(
         );
       });
 
+      it("carries auth.email from restart health checks onto the saved Google account", () => {
+        const probeWithEmail = {
+          ...restartProbe,
+          auth: { status: "unknown", type: "oauth-personal", email: "alice@example.com" },
+        } as const satisfies ServerProvider;
+        const merged = ProviderRegistry.mergeProviderSnapshot(signedIn, probeWithEmail);
+        assert.deepStrictEqual(merged.auth, {
+          ...signedIn.auth,
+          email: "alice@example.com",
+        });
+        assert.equal(merged.status, "ready");
+        assert.deepStrictEqual(
+          ProviderRegistry.mergeProviderSnapshot(merged, restartProbe).auth,
+          merged.auth,
+        );
+        assert.deepStrictEqual(
+          ProviderRegistry.mergeProviderSnapshot(merged, {
+            ...restartProbe,
+            auth: { status: "unknown", type: "oauth-personal", email: "bob@example.com" },
+          }).auth,
+          { ...signedIn.auth, email: "bob@example.com" },
+        );
+      });
+
       it("does not invent an account after sign-out, disable, uninstall, or for other providers", () => {
         const untouched = [
           { ...restartProbe, auth: { status: "unauthenticated" } },

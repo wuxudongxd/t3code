@@ -319,7 +319,8 @@ const carrySavedAntigravityAccount = (
   }
   const status =
     nextProvider.installed && nextProvider.status === "warning" ? "ready" : nextProvider.status;
-  return { auth: previousProvider.auth, status };
+  const email = nextProvider.auth.email ?? previousProvider.auth.email;
+  return { auth: { ...previousProvider.auth, ...(email ? { email } : {}) }, status };
 };
 
 /** One failed check after a ready one is often transient, so its retained catalog stays offered. */
