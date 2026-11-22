@@ -138,6 +138,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
     readonly auth?: { readonly type: string; readonly label: string };
     readonly enabled?: boolean;
     readonly safe?: boolean;
+    readonly readAuthEmail?: Effect.Effect<string | undefined>;
     readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
     readonly rememberedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   } = {},
@@ -155,6 +156,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
     {
       stampIdentity: (snapshot) => Effect.succeed({ ...snapshot, instanceId, driver }),
       ...(options.auth ? { auth: options.auth } : {}),
+      ...(options.readAuthEmail ? { readAuthEmail: options.readAuthEmail } : {}),
       ...(options.probeUsage ? { probeUsage: options.probeUsage } : {}),
       ...(options.rememberedRuntimeModes
         ? { rememberedRuntimeModes: options.rememberedRuntimeModes }
@@ -931,5 +933,47 @@ it.layer(makeLayerTest(true))("Antigravity periodic health checks", (it) => {
       expect(auth.slice(auth.indexOf("unauthenticated"))).not.toContain("authenticated");
       expect(auth.at(-1)).toBe("unauthenticated");
     }),
+  );
+});
+
+it.layer(layerTest)("Antigravity provider auth email", (it) => {
+  it.effect(
+    "populates auth.email on session start, refreshes it on probe, and clears it on sign-out",
+    () =>
+      Effect.gen(function* () {
+        const email = yield* Ref.make<string | undefined>("first@example.com");
+        const harness = yield* makeHarness({
+          auth: { type: "oauth-personal", label: "Google account" },
+          readAuthEmail: Ref.get(email),
+        });
+        yield* harness.initialize;
+        expect((yield* harness.provider.snapshot.getSnapshot).auth).toEqual({
+          status: "unknown",
+          type: "oauth-personal",
+          email: "first@example.com",
+        });
+
+        yield* harness.provider.onSessionStarted(started, "/workspace");
+        expect((yield* harness.provider.snapshot.getSnapshot).auth).toEqual({
+          status: "authenticated",
+          type: "oauth-personal",
+          label: "Google account",
+          email: "first@example.com",
+        });
+
+        yield* Ref.set(email, "second@example.com");
+        yield* harness.provider.snapshot.refresh;
+        expect((yield* harness.provider.snapshot.getSnapshot).auth).toEqual({
+          status: "authenticated",
+          type: "oauth-personal",
+          label: "Google account",
+          email: "second@example.com",
+        });
+
+        yield* harness.provider.onSignedOut;
+        expect((yield* harness.provider.snapshot.getSnapshot).auth).toEqual({
+          status: "unauthenticated",
+        });
+      }),
   );
 });

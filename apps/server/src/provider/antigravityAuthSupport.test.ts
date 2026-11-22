@@ -33,6 +33,7 @@ import {
   antigravityLoginResponse,
   parseAntigravityAuthorizationUrl,
   prepareAntigravityProfile,
+  readAntigravityAuthEmail,
   resolveAntigravityInstanceDirectories,
 } from "./antigravityAuthSupport.ts";
 
@@ -902,6 +903,101 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
         expect(Result.isFailure(result)).toBe(true);
         expect(yield* fs.exists(profileDirectory)).toBe(false);
       }
+    }),
+  );
+});
+
+function makeFakeJwt(payload: Record<string, unknown>): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${header}.${body}.signature`;
+}
+
+it.layer(NodeServices.layer)("readAntigravityAuthEmail", (it) => {
+  it.effect("reads id_token_email from antigravity-oauth-token", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const profileDirectory = yield* fs.makeTempDirectoryScoped();
+      const acpDirectory = path.join(profileDirectory, "antigravity-acp");
+      yield* fs.makeDirectory(acpDirectory, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(acpDirectory, "antigravity-oauth-token"),
+        encodeUnknownJson({
+          token: { access_token: "test-access-token" },
+          auth_method: "consumer",
+          id_token_email: "  alice@example.com  ",
+        }),
+      );
+
+      expect(
+        yield* readAntigravityAuthEmail({ profileDirectory, authMethod: "oauth-personal" }),
+      ).toBe("alice@example.com");
+      expect(
+        yield* readAntigravityAuthEmail({ profileDirectory, authMethod: "oauth-business" }),
+      ).toBe("alice@example.com");
+      expect(
+        yield* readAntigravityAuthEmail({ profileDirectory, authMethod: "gemini-api-key" }),
+      ).toBeUndefined();
+      expect(
+        yield* readAntigravityAuthEmail({ profileDirectory, authMethod: "agent-platform" }),
+      ).toBeUndefined();
+    }),
+  );
+
+  it.effect("falls back to google_accounts.json and JWT id_token payloads", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+
+      const accountsProfile = yield* fs.makeTempDirectoryScoped();
+      yield* fs.writeFileString(
+        path.join(accountsProfile, "google_accounts.json"),
+        encodeUnknownJson({ active: "bob@example.com" }),
+      );
+      expect(
+        yield* readAntigravityAuthEmail({
+          profileDirectory: accountsProfile,
+          authMethod: "oauth-personal",
+        }),
+      ).toBe("bob@example.com");
+
+      const jwtProfile = yield* fs.makeTempDirectoryScoped();
+      const jwtAcp = path.join(jwtProfile, "antigravity-acp");
+      yield* fs.makeDirectory(jwtAcp, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(jwtAcp, "oauth_creds.json"),
+        encodeUnknownJson({ id_token: makeFakeJwt({ email: "carol@example.com" }) }),
+      );
+      expect(
+        yield* readAntigravityAuthEmail({
+          profileDirectory: jwtProfile,
+          authMethod: "oauth-personal",
+        }),
+      ).toBe("carol@example.com");
+    }),
+  );
+
+  it.effect("returns undefined when credential files are missing or malformed", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const profileDirectory = yield* fs.makeTempDirectoryScoped();
+
+      expect(
+        yield* readAntigravityAuthEmail({ profileDirectory, authMethod: "oauth-personal" }),
+      ).toBeUndefined();
+
+      const acpDirectory = path.join(profileDirectory, "antigravity-acp");
+      yield* fs.makeDirectory(acpDirectory, { recursive: true });
+      yield* fs.writeFileString(path.join(acpDirectory, "antigravity-oauth-token"), "{not-json");
+      yield* fs.writeFileString(
+        path.join(acpDirectory, "oauth_creds.json"),
+        encodeUnknownJson({ id_token: "not.a.jwt", id_token_email: "not-an-email" }),
+      );
+      expect(
+        yield* readAntigravityAuthEmail({ profileDirectory, authMethod: "oauth-personal" }),
+      ).toBeUndefined();
     }),
   );
 });

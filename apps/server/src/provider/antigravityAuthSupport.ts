@@ -154,6 +154,102 @@ function antigravityProfileSettings(auth: AntigravityAuthConfig): string {
   })}\n`;
 }
 
+const AntigravityOAuthTokenEmailFile = Schema.fromJsonString(
+  Schema.Struct({
+    id_token_email: Schema.optional(Schema.String),
+    email: Schema.optional(Schema.String),
+    id_token: Schema.optional(Schema.String),
+    token: Schema.optional(
+      Schema.Struct({
+        id_token: Schema.optional(Schema.String),
+      }),
+    ),
+  }),
+);
+const decodeAntigravityOAuthTokenEmail = Schema.decodeUnknownOption(AntigravityOAuthTokenEmailFile);
+
+const AntigravityGoogleAccountsFile = Schema.fromJsonString(
+  Schema.Struct({
+    active: Schema.optional(Schema.String),
+  }),
+);
+const decodeAntigravityGoogleAccounts = Schema.decodeUnknownOption(AntigravityGoogleAccountsFile);
+
+const JwtEmailPayload = Schema.fromJsonString(
+  Schema.Struct({
+    email: Schema.optional(Schema.String),
+  }),
+);
+const decodeJwtEmailPayload = Schema.decodeUnknownOption(JwtEmailPayload);
+
+function normalizeAntigravityAuthEmail(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.includes("@") && !/\s/.test(trimmed) ? trimmed : undefined;
+}
+
+function extractJwtEmail(token: unknown): string | undefined {
+  if (typeof token !== "string") return undefined;
+  const parts = token.split(".");
+  if (parts.length !== 3 || !parts[1]) return undefined;
+  try {
+    const payload = Buffer.from(parts[1], "base64url").toString("utf8");
+    const decoded = decodeJwtEmailPayload(payload);
+    return Option.isSome(decoded) ? normalizeAntigravityAuthEmail(decoded.value.email) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractEmailFromOAuthTokenText(contents: string): string | undefined {
+  const decoded = decodeAntigravityOAuthTokenEmail(contents);
+  if (Option.isNone(decoded)) return undefined;
+  return (
+    normalizeAntigravityAuthEmail(decoded.value.id_token_email) ??
+    normalizeAntigravityAuthEmail(decoded.value.email) ??
+    extractJwtEmail(decoded.value.id_token) ??
+    extractJwtEmail(decoded.value.token?.id_token)
+  );
+}
+
+function extractEmailFromGoogleAccountsText(contents: string): string | undefined {
+  const decoded = decodeAntigravityGoogleAccounts(contents);
+  return Option.isSome(decoded) ? normalizeAntigravityAuthEmail(decoded.value.active) : undefined;
+}
+
+/**
+ * Extracts the signed-in Google account email from an isolated Antigravity profile directory.
+ * Returns `undefined` for non-OAuth methods or when credential files are missing or malformed.
+ */
+export const readAntigravityAuthEmail = Effect.fn("readAntigravityAuthEmail")(function* (input: {
+  readonly profileDirectory: string;
+  readonly authMethod: AntigravityAuthMethod;
+}): Effect.fn.Return<string | undefined, never, FileSystem.FileSystem | Path.Path> {
+  if (!antigravityAuthUsesBrowser(input.authMethod)) return undefined;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const profileDirectory = path.resolve(input.profileDirectory);
+  const acpDirectory = path.join(profileDirectory, "antigravity-acp");
+  const candidates: ReadonlyArray<
+    readonly [filePath: string, parse: (contents: string) => string | undefined]
+  > = [
+    [path.join(acpDirectory, "antigravity-oauth-token"), extractEmailFromOAuthTokenText],
+    [path.join(acpDirectory, "google_accounts.json"), extractEmailFromGoogleAccountsText],
+    [path.join(profileDirectory, "google_accounts.json"), extractEmailFromGoogleAccountsText],
+    [path.join(acpDirectory, "oauth_creds.json"), extractEmailFromOAuthTokenText],
+    [path.join(profileDirectory, "oauth_creds.json"), extractEmailFromOAuthTokenText],
+  ];
+  for (const [filePath, parse] of candidates) {
+    const contents = yield* fs
+      .readFileString(filePath)
+      .pipe(Effect.orElseSucceed((): string | undefined => undefined));
+    if (contents === undefined) continue;
+    const email = parse(contents);
+    if (email !== undefined) return email;
+  }
+  return undefined;
+});
+
 export interface AntigravityAuthorizationUrl {
   readonly authorizationUrl: string;
   readonly redirectUri: string;

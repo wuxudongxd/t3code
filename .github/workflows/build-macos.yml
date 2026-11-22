@@ -75,6 +75,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           T3CODE_DESKTOP_SIGNED: "false"
           T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: ${{ steps.resource_monitor_cache.outputs.cache-hit == 'true' }}
+          T3CODE_FORK_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: vp run dist:desktop:dmg:arm64
 
       - name: Generate DMG SHA-256 checksums

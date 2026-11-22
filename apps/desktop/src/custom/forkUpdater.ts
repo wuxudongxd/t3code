@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Standalone macOS Electron fork updater runs outside Effect services.
 // @effect-diagnostics globalFetch:off - Standalone macOS Electron fork updater uses native fetch for GitHub Releases.
 // @effect-diagnostics globalTimers:off - Standalone macOS Electron fork updater uses unref'd timers outside Effect runtime.
+// @effect-diagnostics globalDate:off - Standalone macOS Electron fork updater timestamps persisted state outside Effect runtime.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
@@ -12,10 +13,19 @@ import * as NodeStreamPromises from "node:stream/promises";
 
 import * as Electron from "electron";
 
+declare const __T3CODE_FORK_RELEASE_TAG__: string | undefined;
+
 const FORK_RELEASES_API_URL = "https://api.github.com/repos/wuxudongxd/t3code/releases/latest";
 const STARTUP_CHECK_DELAY_MS = 15_000;
 const PERIODIC_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 const FORK_MENU_ITEM_ID = "t3code-fork-check-updates";
+const FORK_UPDATER_STATE_FILENAME = "fork-updater-state.json";
+
+export interface ForkUpdaterState {
+  readonly installedTag?: string;
+  readonly skippedTag?: string;
+  readonly installedAt?: string;
+}
 
 interface GitHubReleaseAsset {
   readonly name: string;
@@ -74,6 +84,163 @@ export function compareForkVersions(a: string, b: string): number {
   if (pa.patch !== pb.patch) return pa.patch > pb.patch ? 1 : -1;
   if (pa.forkNumber !== pb.forkNumber) return pa.forkNumber > pb.forkNumber ? 1 : -1;
   return 0;
+}
+
+/** Normalizes a tag/version string for equality comparisons (strips leading `v` and lowercases). */
+export function normalizeForkTag(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const cleaned = raw.trim().replace(/^v/i, "").toLowerCase();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+/**
+ * Resolves the effective current fork version.
+ * Prefers the build-time embedded release tag (e.g. `v0.1.11-fork.2`) over `app.getVersion()`
+ * (`0.1.11`), which does not carry the `-fork.N` suffix.
+ */
+export function resolveCurrentForkVersion(
+  appVersion: string,
+  embeddedTag: string | null | undefined,
+): string {
+  const normalizedEmbedded = embeddedTag?.trim().replace(/^v/i, "") ?? "";
+  if (normalizedEmbedded.length > 0 && parseForkVersion(normalizedEmbedded)) {
+    return normalizedEmbedded;
+  }
+  return appVersion.trim().replace(/^v/i, "");
+}
+
+/**
+ * Evaluates whether a GitHub Release tag should trigger an update prompt.
+ * Blocks updates when the release matches the embedded build tag, the persisted `installedTag`,
+ * or the persisted `skippedTag`, as well as when semver/fork comparison is not newer.
+ */
+export function shouldOfferForkUpdate(input: {
+  readonly appVersion: string;
+  readonly embeddedTag: string | null | undefined;
+  readonly latestTag: string;
+  readonly state: ForkUpdaterState;
+}): {
+  readonly shouldUpdate: boolean;
+  readonly currentDisplayVersion: string;
+  readonly latestDisplayVersion: string;
+  readonly reason:
+    | "update-available"
+    | "same-embedded-tag"
+    | "already-installed-tag"
+    | "skipped-tag"
+    | "up-to-date";
+} {
+  const latestDisplayVersion = input.latestTag.trim().replace(/^v/i, "");
+  const currentDisplayVersion = resolveCurrentForkVersion(input.appVersion, input.embeddedTag);
+  const normLatest = normalizeForkTag(input.latestTag);
+  const normEmbedded = normalizeForkTag(input.embeddedTag);
+  const normInstalled = normalizeForkTag(input.state.installedTag);
+  const normSkipped = normalizeForkTag(input.state.skippedTag);
+
+  if (normLatest && normEmbedded && normLatest === normEmbedded) {
+    return {
+      shouldUpdate: false,
+      currentDisplayVersion,
+      latestDisplayVersion,
+      reason: "same-embedded-tag",
+    };
+  }
+
+  if (normLatest && normInstalled && normLatest === normInstalled) {
+    return {
+      shouldUpdate: false,
+      currentDisplayVersion,
+      latestDisplayVersion,
+      reason: "already-installed-tag",
+    };
+  }
+
+  if (normLatest && normSkipped && normLatest === normSkipped) {
+    return {
+      shouldUpdate: false,
+      currentDisplayVersion,
+      latestDisplayVersion,
+      reason: "skipped-tag",
+    };
+  }
+
+  if (compareForkVersions(latestDisplayVersion, currentDisplayVersion) <= 0) {
+    return {
+      shouldUpdate: false,
+      currentDisplayVersion,
+      latestDisplayVersion,
+      reason: "up-to-date",
+    };
+  }
+
+  if (
+    input.state.installedTag &&
+    parseForkVersion(input.state.installedTag) &&
+    compareForkVersions(latestDisplayVersion, input.state.installedTag) <= 0
+  ) {
+    return {
+      shouldUpdate: false,
+      currentDisplayVersion,
+      latestDisplayVersion,
+      reason: "already-installed-tag",
+    };
+  }
+
+  return {
+    shouldUpdate: true,
+    currentDisplayVersion,
+    latestDisplayVersion,
+    reason: "update-available",
+  };
+}
+
+/** Reads persisted fork updater state (`installedTag`, `skippedTag`) from disk. */
+export async function readForkUpdaterState(stateFilePath: string): Promise<ForkUpdaterState> {
+  try {
+    const raw = await NodeFSP.readFile(stateFilePath, "utf8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") return {};
+    return {
+      ...(typeof parsed.installedTag === "string" && parsed.installedTag.trim().length > 0
+        ? { installedTag: parsed.installedTag.trim() }
+        : {}),
+      ...(typeof parsed.skippedTag === "string" && parsed.skippedTag.trim().length > 0
+        ? { skippedTag: parsed.skippedTag.trim() }
+        : {}),
+      ...(typeof parsed.installedAt === "string" && parsed.installedAt.trim().length > 0
+        ? { installedAt: parsed.installedAt.trim() }
+        : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+/** Persists fork updater state to disk, creating parent directories if needed. */
+export async function writeForkUpdaterState(
+  stateFilePath: string,
+  state: ForkUpdaterState,
+): Promise<void> {
+  await NodeFSP.mkdir(NodePath.dirname(stateFilePath), { recursive: true });
+  await NodeFSP.writeFile(stateFilePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
+function getEmbeddedForkReleaseTag(): string | null {
+  const raw = typeof __T3CODE_FORK_RELEASE_TAG__ === "undefined" ? "" : __T3CODE_FORK_RELEASE_TAG__;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function resolveForkUpdaterStatePath(): string {
+  try {
+    const userDataDir = Electron.app.getPath("userData");
+    if (userDataDir.trim().length > 0) {
+      return NodePath.join(userDataDir, FORK_UPDATER_STATE_FILENAME);
+    }
+  } catch {
+    // Fallback when Electron app paths are unavailable.
+  }
+  return NodePath.join(NodeOS.homedir(), ".t3", "userdata", FORK_UPDATER_STATE_FILENAME);
 }
 
 /** Selects the best matching macOS `.dmg` asset and optional `.dmg.sha256` checksum asset. */
@@ -246,100 +413,130 @@ async function fetchLatestRelease(): Promise<GitHubLatestRelease> {
 }
 
 let activeCheckPromise: Promise<void> | null = null;
+let activeDownloadPromise: Promise<void> | null = null;
 let lastPromptedTag: string | null = null;
 
 async function downloadAndInstallDmg(
+  releaseTag: string,
   dmgAsset: GitHubReleaseAsset,
   sha256Asset: GitHubReleaseAsset | null,
+  stateFilePath: string,
+  currentState: ForkUpdaterState,
 ): Promise<void> {
-  const targetAppPath = resolveMacAppBundlePath(process.execPath);
-  if (!targetAppPath) {
-    await Electron.dialog
-      .showMessageBox({
-        type: "info",
-        title: "无法自动替换应用",
-        message: "当前未从 .app 包启动，无法执行自动替换。",
-        detail: `请手动下载安装包：${dmgAsset.browser_download_url}`,
-        buttons: ["在浏览器中打开", "取消"],
-        defaultId: 0,
-        cancelId: 1,
-      })
-      .then(({ response }) => {
-        if (response === 0) {
-          void Electron.shell.openExternal(dmgAsset.browser_download_url);
-        }
-      });
-    return;
-  }
+  if (activeDownloadPromise) return activeDownloadPromise;
+  activeDownloadPromise = (async () => {
+    const targetAppPath = resolveMacAppBundlePath(process.execPath);
+    if (!targetAppPath) {
+      await Electron.dialog
+        .showMessageBox({
+          type: "info",
+          title: "无法自动替换应用",
+          message: "当前未从 .app 包启动，无法执行自动替换。",
+          detail: `请手动下载安装包：${dmgAsset.browser_download_url}`,
+          buttons: ["在浏览器中打开", "取消"],
+          defaultId: 0,
+          cancelId: 1,
+        })
+        .then(({ response }) => {
+          if (response === 0) {
+            void Electron.shell.openExternal(dmgAsset.browser_download_url);
+          }
+        });
+      return;
+    }
 
-  const workDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3code-fork-update-"));
-  const dmgPath = NodePath.join(workDir, dmgAsset.name);
-  try {
-    await downloadFile(dmgAsset.browser_download_url, dmgPath);
+    const workDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3code-fork-update-"));
+    const dmgPath = NodePath.join(workDir, dmgAsset.name);
+    try {
+      await downloadFile(dmgAsset.browser_download_url, dmgPath);
 
-    if (sha256Asset) {
-      const shaResponse = await fetch(sha256Asset.browser_download_url, {
-        redirect: "follow",
-        headers: { "User-Agent": "t3code-fork-updater" },
-      });
-      if (shaResponse.ok) {
-        const expected = parseSha256Text(await shaResponse.text());
-        if (expected) {
-          const actual = await computeFileSha256(dmgPath);
-          if (actual !== expected) {
-            throw new Error(
-              `SHA-256 校验失败（期望 ${expected.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…）`,
-            );
+      if (sha256Asset) {
+        const shaResponse = await fetch(sha256Asset.browser_download_url, {
+          redirect: "follow",
+          headers: { "User-Agent": "t3code-fork-updater" },
+        });
+        if (shaResponse.ok) {
+          const expected = parseSha256Text(await shaResponse.text());
+          if (expected) {
+            const actual = await computeFileSha256(dmgPath);
+            if (actual !== expected) {
+              throw new Error(
+                `SHA-256 校验失败（期望 ${expected.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…）`,
+              );
+            }
           }
         }
       }
-    }
 
-    const logFilePath = NodePath.join(
-      NodeOS.homedir(),
-      "Library",
-      "Logs",
-      "t3code-fork-updater.log",
-    );
-    const child = NodeChildProcess.spawn(
-      "/bin/sh",
-      [
-        "-c",
-        buildMacDmgInstallScript(),
-        "t3code-fork-updater",
-        String(process.pid),
-        targetAppPath,
-        dmgPath,
-        workDir,
-        logFilePath,
-      ],
-      {
-        detached: true,
-        stdio: "ignore",
-      },
-    );
-    child.unref();
-    Electron.app.quit();
-  } catch (error) {
-    await NodeFSP.rm(workDir, { recursive: true, force: true }).catch(() => undefined);
-    throw error;
-  }
+      await writeForkUpdaterState(stateFilePath, {
+        ...currentState,
+        installedTag: releaseTag,
+        installedAt: new Date().toISOString(),
+      }).catch(() => undefined);
+
+      const logFilePath = NodePath.join(
+        NodeOS.homedir(),
+        "Library",
+        "Logs",
+        "t3code-fork-updater.log",
+      );
+      const child = NodeChildProcess.spawn(
+        "/bin/sh",
+        [
+          "-c",
+          buildMacDmgInstallScript(),
+          "t3code-fork-updater",
+          String(process.pid),
+          targetAppPath,
+          dmgPath,
+          workDir,
+          logFilePath,
+        ],
+        {
+          detached: true,
+          stdio: "ignore",
+        },
+      );
+      child.unref();
+      Electron.app.quit();
+    } catch (error) {
+      await NodeFSP.rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    } finally {
+      activeDownloadPromise = null;
+    }
+  })();
+  return activeDownloadPromise;
 }
 
 async function checkForForkUpdates(interactive: boolean): Promise<void> {
+  if (activeDownloadPromise) return activeDownloadPromise;
   if (activeCheckPromise) return activeCheckPromise;
   activeCheckPromise = (async () => {
     try {
-      const currentVersion = Electron.app.getVersion();
-      const release = await fetchLatestRelease();
-      const latestVersion = release.tag_name.replace(/^v/i, "");
+      const stateFilePath = resolveForkUpdaterStatePath();
+      const [state, release] = await Promise.all([
+        readForkUpdaterState(stateFilePath),
+        fetchLatestRelease(),
+      ]);
 
-      if (compareForkVersions(latestVersion, currentVersion) <= 0) {
+      const decision = shouldOfferForkUpdate({
+        appVersion: Electron.app.getVersion(),
+        embeddedTag: getEmbeddedForkReleaseTag(),
+        latestTag: release.tag_name,
+        state,
+      });
+
+      if (!decision.shouldUpdate) {
         if (interactive) {
+          const message =
+            decision.reason === "skipped-tag"
+              ? `版本 ${decision.latestDisplayVersion} 已被跳过（当前版本 ${decision.currentDisplayVersion}）。`
+              : `当前版本 ${decision.currentDisplayVersion} 已是最新 Fork 版本。`;
           await Electron.dialog.showMessageBox({
             type: "info",
             title: "已是最新版本",
-            message: `当前版本 ${currentVersion} 已是最新 Fork 版本。`,
+            message,
             buttons: ["确定"],
           });
         }
@@ -356,7 +553,7 @@ async function checkForForkUpdates(interactive: boolean): Promise<void> {
             .showMessageBox({
               type: "info",
               title: "发现新版本",
-              message: `发现新版本 ${latestVersion}，但未找到对应的 macOS DMG 安装包。`,
+              message: `发现新版本 ${decision.latestDisplayVersion}，但未找到对应的 macOS DMG 安装包。`,
               buttons: ["查看 Release 页面", "关闭"],
               defaultId: 0,
               cancelId: 1,
@@ -382,16 +579,22 @@ async function checkForForkUpdates(interactive: boolean): Promise<void> {
       const { response } = await Electron.dialog.showMessageBox({
         type: "info",
         title: "发现 Fork 新版本",
-        message: `T3 Code ${latestVersion} 已发布（当前版本 ${currentVersion}）`,
+        message: `T3 Code ${decision.latestDisplayVersion} 已发布（当前版本 ${decision.currentDisplayVersion}）`,
         detail: `${notesPreview}\n\n点击「立即下载并更新」将自动下载 DMG、校验并替换当前应用后重启。`,
-        buttons: ["立即下载并更新", "稍后"],
+        buttons: ["立即下载并更新", "跳过此版本", "稍后"],
         defaultId: 0,
-        cancelId: 1,
+        cancelId: 2,
       });
 
       if (response === 0) {
         try {
-          await downloadAndInstallDmg(selected.dmg, selected.sha256);
+          await downloadAndInstallDmg(
+            release.tag_name,
+            selected.dmg,
+            selected.sha256,
+            stateFilePath,
+            state,
+          );
         } catch (installError) {
           await Electron.dialog
             .showMessageBox({
@@ -409,6 +612,11 @@ async function checkForForkUpdates(interactive: boolean): Promise<void> {
               }
             });
         }
+      } else if (response === 1) {
+        await writeForkUpdaterState(stateFilePath, {
+          ...state,
+          skippedTag: release.tag_name,
+        }).catch(() => undefined);
       }
     } catch (error) {
       if (interactive) {

@@ -359,8 +359,12 @@
   box-shadow: none;
 }
 
+[data-provider-detail] [data-slot="settings-group"].border > :not(:first-child) {
+  border-top-color: var(--fork-hairline-subtle);
+}
+
 /* Settings page alignment & vertical rhythm:
-   Align the top scope bar ("设置应用于 ...") and section headings ("测试版")
+   Align the top scope bar ("设置应用于 ...") and section headings ("测试版", etc.)
    cleanly with the left edge of the rounded settings cards. */
 [data-settings-page-scroll] > div {
   gap: 1.5rem;
@@ -381,17 +385,128 @@
 }
 
 [data-settings-page-scroll]
-  section
-  > [data-settings-scroll-target]:not([data-slot="settings-group"]) {
+  :where(section [data-settings-scroll-target]:not([data-slot="settings-group"])) {
   padding-inline: 0.125rem;
 }
 
-[data-settings-page-scroll] [data-slot="settings-group"].border > [data-slot="settings-row"] {
+[data-settings-page-scroll]
+  :where([data-slot="settings-group"].border > [data-slot="settings-row"]) {
   padding-inline: 1rem;
 }
 
-[data-settings-page-scroll] [data-slot="settings-group"].border > [data-slot="settings-row"].py-3 {
+[data-settings-page-scroll] [data-slot="settings-group"].border > [data-slot="settings-row"].py-3,
+[data-settings-page-scroll]
+  [data-slot="settings-group"].border
+  [data-slot="collapsible-panel"]
+  [data-slot="settings-row"].py-3 {
   padding-block: 0.8125rem;
+}
+
+/* Folded & Advanced settings dividers and softer keyboard focus rings */
+[data-slot="settings-group"] [data-slot="collapsible-panel"] > div,
+[data-slot="settings-group"] [data-slot="collapsible-panel"] > div > :not(:first-child) {
+  border-top-color: var(--fork-hairline-subtle);
+}
+
+[data-settings-page-scroll] [data-slot="collapsible-trigger"]:focus-visible {
+  --tw-ring-shadow: 0 0 #0000;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ring) 42%, transparent);
+}
+
+/* Providers split view: refined vertical divider, soft accent selected row,
+   and generous, consistent horizontal padding across the right detail pane. */
+[data-provider-list] {
+  border-color: var(--fork-hairline);
+}
+
+[data-provider-list] .divide-y > :not(:first-child) {
+  border-top-color: var(--fork-hairline-subtle);
+}
+
+[data-provider-list-item] {
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+[data-provider-list-item][data-selected="true"] {
+  background-color: color-mix(in srgb, var(--primary) 6.5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 26%, transparent);
+}
+
+:is(.dark, .dark *) [data-provider-list-item][data-selected="true"] {
+  background-color: color-mix(in srgb, var(--primary) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 34%, transparent);
+}
+
+[data-provider-list-item] > div > button:focus-visible {
+  border-radius: 0;
+  --tw-ring-shadow: 0 0 #0000;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ring) 42%, transparent);
+}
+
+:is(.dark, .dark *) [data-provider-list-item] > div > button:focus-visible {
+  border-radius: 0;
+  --tw-ring-shadow: 0 0 #0000;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ring) 52%, transparent);
+}
+
+[data-settings-page-scroll]
+  [data-provider-detail]
+  [data-settings-scroll-target]:not([data-slot="settings-group"]),
+[data-settings-page-scroll]
+  [data-provider-detail]
+  [data-slot="settings-group"]
+  [data-slot="settings-row"],
+[data-settings-page-scroll] [data-provider-detail] [data-slot="settings-group"] > .px-3 {
+  padding-inline: 1rem;
+}
+
+@media (min-width: 640px) {
+  [data-settings-page-scroll]
+    [data-provider-detail]
+    [data-settings-scroll-target]:not([data-slot="settings-group"]),
+  [data-settings-page-scroll]
+    [data-provider-detail]
+    [data-slot="settings-group"]
+    [data-slot="settings-row"],
+  [data-settings-page-scroll] [data-provider-detail] [data-slot="settings-group"] > .px-3 {
+    padding-inline: 1.5rem;
+  }
+}
+
+/* Appearance theme & mode cards: crisp hairlines instead of heavy 2px rings */
+[data-theme-library-card] {
+  border-color: var(--fork-hairline);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+[data-theme-library-card]:hover {
+  border-color: var(--fork-hairline-control-hover);
+}
+
+#appearance [role="group"].grid > button[aria-pressed="false"] {
+  border-color: var(--fork-hairline);
+}
+
+#appearance [role="group"].grid > button[aria-pressed="false"]:hover {
+  border-color: var(--fork-hairline-control-hover);
+}
+
+#appearance [role="group"].grid > button[aria-pressed="true"] {
+  --tw-ring-shadow: 0 0 #0000;
+  border-color: transparent;
+  background-color: color-mix(in srgb, var(--primary) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 38%, transparent);
+}
+
+:is(.dark, .dark *) #appearance [role="group"].grid > button[aria-pressed="true"] {
+  --tw-ring-shadow: 0 0 #0000;
+  background-color: color-mix(in srgb, var(--primary) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 46%, transparent);
 }
 
 /* 9. Minimal sidebar footer: keep only the leftmost Settings gear button
@@ -621,6 +736,8 @@
   [data-slot="composer-host"],
   [data-chat-composer-main-surface="true"],
   [data-app-sidebar] [data-sidebar-row],
+  [data-provider-list-item],
+  [data-theme-library-card],
   [data-assistant-selection-toolbar],
   .chat-markdown .chat-markdown-file-link,
   .chat-markdown tbody tr,

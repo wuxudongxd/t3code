@@ -1174,14 +1174,16 @@ export function ProviderInstanceCard({
     return (
       <div
         data-slot="settings-row"
+        data-provider-list-item=""
+        data-selected={selected ? "true" : undefined}
         className={cn(
-          "group relative flex min-h-18 items-center gap-3 px-3 py-3 transition-colors sm:px-4",
+          "group relative flex min-h-18 items-center gap-2.5 px-3 py-3 transition-colors sm:px-3.5",
           selected ? "bg-foreground/[0.06]" : "hover:bg-muted/25",
         )}
       >
         <div
           className={cn(
-            "pointer-events-none flex min-w-0 flex-1 items-start gap-3 rounded-md text-left transition-opacity",
+            "pointer-events-none flex min-w-0 flex-1 items-start gap-2.5 rounded-md text-left transition-opacity",
             !enabled && !selected && "opacity-60 group-hover:opacity-100",
           )}
         >
@@ -1194,10 +1196,12 @@ export function ProviderInstanceCard({
           />
           {titleIconNode}
           <span className="min-w-0 flex-1">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-sm font-medium text-foreground">{displayName}</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="min-w-0 shrink-[0.1] truncate text-sm font-medium text-foreground">
+                {displayName}
+              </span>
               {versionLabel ? (
-                <code className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">
+                <code className="min-w-0 max-w-22 shrink-[10] truncate font-mono text-2xs text-muted-foreground/85">
                   {versionLabel}
                 </code>
               ) : null}
