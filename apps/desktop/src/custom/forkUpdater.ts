@@ -18,8 +18,29 @@ declare const __T3CODE_FORK_RELEASE_TAG__: string | undefined;
 const FORK_RELEASES_API_URL = "https://api.github.com/repos/wuxudongxd/t3code/releases/latest";
 const STARTUP_CHECK_DELAY_MS = 15_000;
 const PERIODIC_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
-const FORK_MENU_ITEM_ID = "t3code-fork-check-updates";
 const FORK_UPDATER_STATE_FILENAME = "fork-updater-state.json";
+
+interface ForkUpdateCheckOutcome {
+  readonly checked: boolean;
+  readonly status: "up-to-date" | "available" | "error";
+  readonly currentVersion: string;
+  readonly availableVersion: string | null;
+  readonly message: string | null;
+}
+
+export function isForkUpdaterActive(): boolean {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone Electron updater outside Effect services.
+  return registered && NodeOS.platform() === "darwin" && Electron.app?.isPackaged === true;
+}
+
+export function getForkDisplayVersion(fallbackVersion: string): string {
+  return resolveCurrentForkVersion(fallbackVersion, getEmbeddedForkReleaseTag());
+}
+
+function forkFetch(url: string, init?: RequestInit): Promise<Response> {
+  const netFetch = (Electron.net as { fetch?: typeof fetch } | undefined)?.fetch;
+  return typeof netFetch === "function" ? netFetch(url, init) : fetch(url, init);
+}
 
 export interface ForkUpdaterState {
   readonly installedTag?: string;
@@ -376,7 +397,7 @@ async function computeFileSha256(filePath: string): Promise<string> {
 }
 
 async function downloadFile(url: string, destinationPath: string): Promise<void> {
-  const response = await fetch(url, {
+  const response = await forkFetch(url, {
     redirect: "follow",
     headers: { "User-Agent": "t3code-fork-updater" },
   });
@@ -390,7 +411,7 @@ async function downloadFile(url: string, destinationPath: string): Promise<void>
 }
 
 async function fetchLatestRelease(): Promise<GitHubLatestRelease> {
-  const response = await fetch(FORK_RELEASES_API_URL, {
+  const response = await forkFetch(FORK_RELEASES_API_URL, {
     headers: {
       Accept: "application/vnd.github+json",
       "User-Agent": "t3code-fork-updater",
@@ -412,7 +433,7 @@ async function fetchLatestRelease(): Promise<GitHubLatestRelease> {
   };
 }
 
-let activeCheckPromise: Promise<void> | null = null;
+let activeCheckPromise: Promise<ForkUpdateCheckOutcome> | null = null;
 let activeDownloadPromise: Promise<void> | null = null;
 let lastPromptedTag: string | null = null;
 
@@ -451,7 +472,7 @@ async function downloadAndInstallDmg(
       await downloadFile(dmgAsset.browser_download_url, dmgPath);
 
       if (sha256Asset) {
-        const shaResponse = await fetch(sha256Asset.browser_download_url, {
+        const shaResponse = await forkFetch(sha256Asset.browser_download_url, {
           redirect: "follow",
           headers: { "User-Agent": "t3code-fork-updater" },
         });
@@ -509,10 +530,20 @@ async function downloadAndInstallDmg(
   return activeDownloadPromise;
 }
 
-async function checkForForkUpdates(interactive: boolean): Promise<void> {
-  if (activeDownloadPromise) return activeDownloadPromise;
+export async function checkForForkUpdates(interactive: boolean): Promise<ForkUpdateCheckOutcome> {
+  const fallbackVersion = getForkDisplayVersion(Electron.app.getVersion());
+  if (activeDownloadPromise) {
+    await activeDownloadPromise;
+    return {
+      checked: true,
+      status: "up-to-date",
+      currentVersion: fallbackVersion,
+      availableVersion: null,
+      message: null,
+    };
+  }
   if (activeCheckPromise) return activeCheckPromise;
-  activeCheckPromise = (async () => {
+  activeCheckPromise = (async (): Promise<ForkUpdateCheckOutcome> => {
     try {
       const stateFilePath = resolveForkUpdaterStatePath();
       const [state, release] = await Promise.all([
@@ -540,7 +571,13 @@ async function checkForForkUpdates(interactive: boolean): Promise<void> {
             buttons: ["确定"],
           });
         }
-        return;
+        return {
+          checked: true,
+          status: "up-to-date",
+          currentVersion: decision.currentDisplayVersion,
+          availableVersion: null,
+          message: null,
+        };
       }
 
       const arch =
@@ -564,11 +601,23 @@ async function checkForForkUpdates(interactive: boolean): Promise<void> {
               }
             });
         }
-        return;
+        return {
+          checked: true,
+          status: "available",
+          currentVersion: decision.currentDisplayVersion,
+          availableVersion: decision.latestDisplayVersion,
+          message: null,
+        };
       }
 
       if (!interactive && lastPromptedTag === release.tag_name) {
-        return;
+        return {
+          checked: true,
+          status: "available",
+          currentVersion: decision.currentDisplayVersion,
+          availableVersion: decision.latestDisplayVersion,
+          message: null,
+        };
       }
       lastPromptedTag = release.tag_name;
 
@@ -596,12 +645,14 @@ async function checkForForkUpdates(interactive: boolean): Promise<void> {
             state,
           );
         } catch (installError) {
+          const errMsg =
+            installError instanceof Error ? installError.message : String(installError);
           await Electron.dialog
             .showMessageBox({
               type: "error",
               title: "自动更新失败",
               message: "下载或安装更新时出错。",
-              detail: installError instanceof Error ? installError.message : String(installError),
+              detail: errMsg,
               buttons: ["打开 Release 页面", "关闭"],
               defaultId: 0,
               cancelId: 1,
@@ -611,6 +662,13 @@ async function checkForForkUpdates(interactive: boolean): Promise<void> {
                 void Electron.shell.openExternal(release.html_url);
               }
             });
+          return {
+            checked: true,
+            status: "error",
+            currentVersion: decision.currentDisplayVersion,
+            availableVersion: decision.latestDisplayVersion,
+            message: errMsg,
+          };
         }
       } else if (response === 1) {
         await writeForkUpdaterState(stateFilePath, {
@@ -618,40 +676,36 @@ async function checkForForkUpdates(interactive: boolean): Promise<void> {
           skippedTag: release.tag_name,
         }).catch(() => undefined);
       }
+      return {
+        checked: true,
+        status: "available",
+        currentVersion: decision.currentDisplayVersion,
+        availableVersion: decision.latestDisplayVersion,
+        message: null,
+      };
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       if (interactive) {
         await Electron.dialog.showMessageBox({
           type: "warning",
           title: "检查 Fork 更新失败",
           message: "无法连接到 GitHub Releases。",
-          detail: error instanceof Error ? error.message : String(error),
+          detail: errMsg,
           buttons: ["确定"],
         });
       }
+      return {
+        checked: false,
+        status: "error",
+        currentVersion: fallbackVersion,
+        availableVersion: null,
+        message: errMsg,
+      };
     } finally {
       activeCheckPromise = null;
     }
   })();
   return activeCheckPromise;
-}
-
-function injectForkUpdaterMenuItem(menu: Electron.Menu | null): void {
-  if (!menu) return;
-  const appSubmenu = menu.items[0]?.submenu;
-  if (!appSubmenu) return;
-  if (appSubmenu.items.some((item) => item.id === FORK_MENU_ITEM_ID)) return;
-
-  const insertIndex = Math.min(2, appSubmenu.items.length);
-  appSubmenu.insert(
-    insertIndex,
-    new Electron.MenuItem({
-      id: FORK_MENU_ITEM_ID,
-      label: "检查 Fork 更新 / Check for Fork Updates…",
-      click: () => {
-        void checkForForkUpdates(true);
-      },
-    }),
-  );
 }
 
 let registered = false;
@@ -665,23 +719,7 @@ export function registerForkUpdater(): void {
   if (registered || NodeOS.platform() !== "darwin") return;
   registered = true;
 
-  try {
-    const originalSetApplicationMenu = Electron.Menu.setApplicationMenu.bind(Electron.Menu);
-    Electron.Menu.setApplicationMenu = (menu: Electron.Menu | null) => {
-      injectForkUpdaterMenuItem(menu);
-      originalSetApplicationMenu(menu);
-    };
-  } catch {
-    // Non-fatal if Electron.Menu.setApplicationMenu is non-writable in a future Electron version.
-  }
-
   void Electron.app.whenReady().then(() => {
-    const existingMenu = Electron.Menu.getApplicationMenu();
-    if (existingMenu) {
-      injectForkUpdaterMenuItem(existingMenu);
-      Electron.Menu.setApplicationMenu(existingMenu);
-    }
-
     if (!Electron.app.isPackaged) return;
 
     const startupTimer = setTimeout(() => {

@@ -9,6 +9,7 @@ import * as Electron from "electron";
 import { msg } from "gt-i18n";
 
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
+import { checkForForkUpdates, isForkUpdaterActive } from "../custom/forkUpdater.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
@@ -158,6 +159,10 @@ const checkForUpdatesFromMenu = Effect.gen(function* () {
 }).pipe(Effect.withSpan("desktop.menu.checkForUpdates"));
 
 const handleCheckForUpdatesMenuClick = Effect.gen(function* () {
+  if (isForkUpdaterActive()) {
+    yield* Effect.promise(() => checkForForkUpdates(true));
+    return;
+  }
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
   const disabledReason = yield* updates.disabledReason;

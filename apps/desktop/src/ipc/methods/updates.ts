@@ -4,9 +4,15 @@ import {
   DesktopUpdateCheckResultSchema,
   DesktopUpdateStateSchema,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import {
+  checkForForkUpdates,
+  getForkDisplayVersion,
+  isForkUpdaterActive,
+} from "../../custom/forkUpdater.ts";
 import * as DesktopUpdates from "../../updates/DesktopUpdates.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
@@ -17,7 +23,14 @@ export const getUpdateState = DesktopIpc.makeIpcMethod({
   result: DesktopUpdateStateSchema,
   handler: Effect.fn("desktop.ipc.updates.getState")(function* () {
     const updates = yield* DesktopUpdates.DesktopUpdates;
-    return yield* updates.getState;
+    const state = yield* updates.getState;
+    if (!isForkUpdaterActive()) return state;
+    return {
+      ...state,
+      enabled: true,
+      status: state.status === "disabled" ? "idle" : state.status,
+      currentVersion: getForkDisplayVersion(state.currentVersion),
+    };
   }),
 });
 
@@ -63,6 +76,25 @@ export const checkForUpdate = DesktopIpc.makeIpcMethod({
   result: DesktopUpdateCheckResultSchema,
   handler: Effect.fn("desktop.ipc.updates.check")(function* () {
     const updates = yield* DesktopUpdates.DesktopUpdates;
+    if (isForkUpdaterActive()) {
+      const baseState = yield* updates.getState;
+      const outcome = yield* Effect.promise(() => checkForForkUpdates(true));
+      const checkedAt = DateTime.formatIso(yield* DateTime.now);
+      return {
+        checked: outcome.checked,
+        state: {
+          ...baseState,
+          enabled: true,
+          status: outcome.status,
+          currentVersion: outcome.currentVersion,
+          availableVersion: outcome.availableVersion,
+          checkedAt,
+          message: outcome.message,
+          errorContext: outcome.status === "error" ? "check" : null,
+          canRetry: outcome.status === "error",
+        },
+      };
+    }
     return yield* updates.check("web-ui");
   }),
 });

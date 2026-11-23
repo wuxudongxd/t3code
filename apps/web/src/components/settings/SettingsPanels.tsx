@@ -343,7 +343,7 @@ function AboutVersionSection() {
     <>
       <SettingsRow
         id={setting("app-version").id}
-        title={<AboutVersionTitle />}
+        title={<AboutVersionTitle version={updateState?.currentVersion} />}
         description={description}
         managed={updatesDenial}
         control={
