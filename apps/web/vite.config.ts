@@ -304,6 +304,7 @@ export default defineConfig(({ command }) => {
   // manifest version. Only a production build is paired with a packed server.
   const configuredAppVersion =
     process.env.APP_VERSION?.trim() ||
+    process.env.T3CODE_FORK_RELEASE_TAG?.trim().replace(/^v/i, "") ||
     (command === "build" && !builtDev
       ? resolveTaggedSourceVersion(`${import.meta.dirname}/../..`, pkg.version)
       : pkg.version);
